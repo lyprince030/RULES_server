@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RULES.txt Generator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+
+  <h1 id="mainTitle">📜 RULES.txt Generator</h1>
+  <p id="subtitle" class="subtitle">Créez vos règles personnelles, claires et respectées.</p>
+
+  <!-- SECTION INSCRIPTION -->
+  <div id="loginSection">
+    <h2 id="loginTitle">Inscription / Connexion</h2>
+    <input type="text" id="username" placeholder="Nom d'utilisateur" required>
+    <input type="email" id="email" placeholder="Email" required>
+    <button id="registerBtn">Commencer</button>
+  </div>
+
+  <!-- SECTION FORMULAIRE -->
+  <div id="formSection" style="display:none;">
+    <h2 id="formTitle">Définissez vos règles</h2>
+
+    <form id="rulesForm">
+      <label id="labelTemps">1️⃣ Temps</label>
+      <textarea id="temps" placeholder="Ex: Je ne réponds pas après 20h..." required></textarea>
+
+      <label id="labelTravail">2️⃣ Travail / Communication</label>
+      <textarea id="travail" placeholder="Ex: Je ne travaille pas gratuitement..." required></textarea>
+
+      <label id="labelNonNeg">3️⃣ Non-négociables</label>
+      <textarea id="nonnegociables" placeholder="Ex: Mensonge répété = fin de l’échange" required></textarea>
+
+      <button type="submit" id="submitBtn">✨ Générer mes règles</button>
+    </form>
+
+    <!-- RÉSULTAT -->
+    <div id="result" style="display:none;">
+      <h3 id="resultTitle">✅ Vos règles sont prêtes</h3>
+
+      <a id="publicLink" class="btn" target="_blank">🌐 Voir la page publique</a>
+
+      <a id="downloadLink" class="btn">⬇️ Télécharger RULES.txt</a>
+
+      <button class="btn whatsapp" id="whatsappBtn">📲 Partager sur WhatsApp</button>
+      <button class="btn copy" id="copyBtn">📋 Copier le lien</button>
+
+      <div id="copyStatus"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="script.js"></script>
+<script>
+/* =========================
+   Adaptation multi-langue
+========================= */
+const lang = navigator.language || navigator.userLanguage; // ex: "fr-FR", "en-US"
+const isFR = lang.startsWith("fr");
+
+// Titres et placeholders
+document.getElementById('mainTitle').innerText = isFR ? "📜 RULES.txt Generator" : "📜 RULES.txt Generator";
+document.getElementById('subtitle').innerText = isFR ? 
+  "Créez vos règles personnelles, claires et respectées." :
+  "Create your personal rules, clear and respected.";
+
+document.getElementById('loginTitle').innerText = isFR ? "Inscription / Connexion" : "Sign Up / Login";
+document.getElementById('username').placeholder = isFR ? "Nom d'utilisateur" : "Username";
+document.getElementById('email').placeholder = isFR ? "Email" : "Email";
+document.getElementById('registerBtn').innerText = isFR ? "Commencer" : "Start";
+
+document.getElementById('formTitle').innerText = isFR ? "Définissez vos règles" : "Set your rules";
+document.getElementById('labelTemps').innerText = isFR ? "1️⃣ Temps" : "1️⃣ Time";
+document.getElementById('temps').placeholder = isFR ? 
+  "Ex: Je ne réponds pas après 20h..." : 
+  "Ex: I do not respond after 8PM...";
+
+document.getElementById('labelTravail').innerText = isFR ? "2️⃣ Travail / Communication" : "2️⃣ Work / Communication";
+document.getElementById('travail').placeholder = isFR ? 
+  "Ex: Je ne travaille pas gratuitement..." : 
+  "Ex: I do not work for free...";
+
+document.getElementById('labelNonNeg').innerText = isFR ? "3️⃣ Non-négociables" : "3️⃣ Non-negotiables";
+document.getElementById('nonnegociables').placeholder = isFR ? 
+  "Ex: Mensonge répété = fin de l’échange" :
+  "Ex: Repeated lying = end of interaction";
+
+document.getElementById('submitBtn').innerText = isFR ? "✨ Générer mes règles" : "✨ Generate my rules";
+document.getElementById('resultTitle').innerText = isFR ? "✅ Vos règles sont prêtes" : "✅ Your rules are ready";
+document.getElementById('publicLink').innerText = isFR ? "🌐 Voir la page publique" : "🌐 View public page";
+document.getElementById('downloadLink').innerText = isFR ? "⬇️ Télécharger RULES.txt" : "⬇️ Download RULES.txt";
+document.getElementById('whatsappBtn').innerText = isFR ? "📲 Partager sur WhatsApp" : "📲 Share on WhatsApp";
+document.getElementById('copyBtn').innerText = isFR ? "📋 Copier le lien" : "📋 Copy link";
+</script>
+</body>
+</html>

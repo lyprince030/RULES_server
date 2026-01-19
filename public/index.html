@@ -42,14 +42,8 @@
     <div id="result" style="display:none;">
       <h3 id="resultTitle">✅ Vos règles sont prêtes</h3>
 
-      <a id="publicLink" class="btn" target="_blank">🌐 Voir la page publique</a>
-
-      <a id="downloadLink" class="btn">⬇️ Télécharger RULES.txt</a>
-
-      <button class="btn whatsapp" id="whatsappBtn">📲 Partager sur WhatsApp</button>
-      <button class="btn copy" id="copyBtn">📋 Copier le lien</button>
-
-      <div id="copyStatus"></div>
+      <!-- LIENS PARTAGE ET TÉLÉCHARGEMENT -->
+      <div id="shareLink"></div>
     </div>
   </div>
 
@@ -92,10 +86,6 @@ document.getElementById('nonnegociables').placeholder = isFR ?
 
 document.getElementById('submitBtn').innerText = isFR ? "✨ Générer mes règles" : "✨ Generate my rules";
 document.getElementById('resultTitle').innerText = isFR ? "✅ Vos règles sont prêtes" : "✅ Your rules are ready";
-document.getElementById('publicLink').innerText = isFR ? "🌐 Voir la page publique" : "🌐 View public page";
-document.getElementById('downloadLink').innerText = isFR ? "⬇️ Télécharger RULES.txt" : "⬇️ Download RULES.txt";
-document.getElementById('whatsappBtn').innerText = isFR ? "📲 Partager sur WhatsApp" : "📲 Share on WhatsApp";
-document.getElementById('copyBtn').innerText = isFR ? "📋 Copier le lien" : "📋 Copy link";
 </script>
 </body>
 </html>

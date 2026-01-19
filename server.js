@@ -8,7 +8,11 @@ const cors = require('cors');
 const OpenAI = require('openai');
 
 const app = express();
-const PORT = 3000;
+
+/* =========================
+   PORT dynamique pour Render
+========================= */
+const PORT = process.env.PORT || 3000;
 
 /* =========================
    OpenAI
@@ -80,7 +84,8 @@ app.post('/create', async (req, res) => {
   if (!userId) return res.sendStatus(401);
 
   const { temps, travail, nonneg, lang } = req.body;
-  if (!temps || !travail || !nonneg) return res.status(400).json({ error: "Données incomplètes" });
+  if (!temps || !travail || !nonneg)
+    return res.status(400).json({ error: "Données incomplètes" });
 
   const userLang = lang || 'fr'; // par défaut français
 
@@ -126,7 +131,7 @@ Répond STRICTEMENT en JSON :
       `INSERT INTO rules(id, userId, rulesText, profileText, createdAt)
        VALUES(?,?,?,?,?)`,
       [id, userId, rulesText, profileText, new Date().toISOString()],
-      () => res.json({ url: `http://localhost:${PORT}/r/${id}` })
+      () => res.json({ url: `${req.protocol}://${req.get('host')}/r/${id}` })
     );
 
   } catch (e) {

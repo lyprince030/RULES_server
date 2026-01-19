@@ -46,7 +46,7 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
 });
 
 /* =========================
-   Générer RULES.txt + profil IA
+   Générer RULES.txt + profil IA (multi-langue)
 ========================= */
 document.getElementById('rulesForm').addEventListener('submit', async function (e) {
   e.preventDefault();
@@ -76,12 +76,21 @@ document.getElementById('rulesForm').addEventListener('submit', async function (
     const copyLink = rulesUrl;
 
     // Affichage des liens dans la page
-    document.getElementById('shareLink').innerHTML = `
+    const shareDiv = document.getElementById('shareLink');
+    if (!shareDiv) {
+      console.error("Erreur : div #shareLink introuvable");
+      return;
+    }
+
+    shareDiv.innerHTML = `
       <p><a href="${rulesUrl}" target="_blank">⬇️ Télécharger RULES.txt</a></p>
       <p><a href="${whatsappLink}" target="_blank">📲 Partager sur WhatsApp</a></p>
       <p><a href="${telegramLink}" target="_blank">📨 Partager sur Telegram</a></p>
       <p>Lien à copier : <input type="text" value="${copyLink}" readonly></p>
     `;
+
+    // Faire défiler vers le résultat
+    shareDiv.scrollIntoView({ behavior: "smooth" });
 
   } catch (err) {
     console.error("Erreur lors de la génération:", err);

@@ -121,22 +121,32 @@ Répond STRICTEMENT en JSON :
       temperature: 0.3
     });
 
-    const aiData = JSON.parse(completion.choices[0].message.content);
+    let aiData;
+    try {
+      aiData = JSON.parse(completion.choices[0].message.content);
+    } catch (jsonErr) {
+      console.error("❌ JSON IA invalide :", completion.choices[0].message.content);
+      return res.status(500).json({ error: "Erreur IA : JSON invalide" });
+    }
+
     const rulesText = aiData.rules;
     const profileText = aiData.profile;
 
     const id = shortid.generate();
 
+    // URL publique dynamique (Render)
+    const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
+
     db.run(
       `INSERT INTO rules(id, userId, rulesText, profileText, createdAt)
        VALUES(?,?,?,?,?)`,
       [id, userId, rulesText, profileText, new Date().toISOString()],
-      () => res.json({ url: `${req.protocol}://${req.get('host')}/r/${id}` })
+      () => res.json({ url: `https://${host}/r/${id}` })
     );
 
   } catch (e) {
     console.error("❌ Erreur IA :", e);
-    res.status(500).json({ error: "Erreur lors de la génération IA" });
+    res.status(500).json({ error: "Erreur lors de la génération IA : " + e.message });
   }
 });
 
@@ -158,7 +168,8 @@ app.get('/r/:id', (req, res) => {
   db.get(`SELECT rulesText, profileText FROM rules WHERE id=?`, [req.params.id], (err, row) => {
     if (!row) return res.send("RULES introuvable");
 
-    const pageUrl = `${req.protocol}://${req.get('host')}/r/${req.params.id}`;
+    const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
+    const pageUrl = `https://${host}/r/${req.params.id}`;
 
     res.send(`
 <!DOCTYPE html>

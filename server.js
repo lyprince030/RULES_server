@@ -87,7 +87,7 @@ app.post('/create', async (req, res) => {
   if (!temps || !travail || !nonneg)
     return res.status(400).json({ error: "Données incomplètes" });
 
-  const userLang = lang || 'fr'; // par défaut français
+  const userLang = (lang || 'fr').substring(0, 2); // ex: "fr-FR" → "fr"
 
   const prompt = `
 LANG: ${userLang}

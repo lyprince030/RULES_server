@@ -4,13 +4,26 @@
 const userLang = navigator.language || navigator.userLanguage; // ex: fr-FR, en-US
 
 /* =========================
+   Petite sanitation client (anti XSS basique)
+========================= */
+function sanitize(str) {
+  return String(str)
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .trim();
+}
+
+/* =========================
    Vérifier si utilisateur déjà connecté
 ========================= */
 async function checkUser() {
   try {
-    const res = await fetch('/me');
-    const data = await res.json();
+    const res = await fetch('/me', {
+      credentials: 'include' // 🔐 cookies sécurisés
+    });
+    if (!res.ok) return;
 
+    const data = await res.json();
     if (data.logged) {
       document.getElementById('loginSection').style.display = 'none';
       document.getElementById('formSection').style.display = 'block';
@@ -25,11 +38,15 @@ checkUser();
    Inscription / Connexion
 ========================= */
 document.getElementById('registerBtn').addEventListener('click', async () => {
-  const username = document.getElementById('username').value.trim();
-  const email = document.getElementById('email').value.trim();
+  const btn = document.getElementById('registerBtn');
+  btn.disabled = true; // 🔐 anti double clic
+
+  const username = sanitize(document.getElementById('username').value);
+  const email = sanitize(document.getElementById('email').value);
 
   if (!username || !email) {
     alert("Remplissez tous les champs");
+    btn.disabled = false;
     return;
   }
 
@@ -37,11 +54,13 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
     const res = await fetch('/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', // 🔐 cookies
       body: JSON.stringify({ username, email })
     });
 
-    const data = await res.json();
+    if (!res.ok) throw new Error("Erreur serveur");
 
+    const data = await res.json();
     if (data.success) {
       document.getElementById('loginSection').style.display = 'none';
       document.getElementById('formSection').style.display = 'block';
@@ -51,6 +70,8 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
   } catch (err) {
     console.error("Erreur inscription :", err);
     alert("Erreur lors de l'inscription. Réessayez.");
+  } finally {
+    btn.disabled = false;
   }
 });
 
@@ -60,12 +81,16 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
 document.getElementById('rulesForm').addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  const temps = document.getElementById('temps').value.trim();
-  const travail = document.getElementById('travail').value.trim();
-  const nonneg = document.getElementById('nonnegociables').value.trim();
+  const submitBtn = document.querySelector('#rulesForm button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true; // 🔐 anti spam
+
+  const temps = sanitize(document.getElementById('temps').value);
+  const travail = sanitize(document.getElementById('travail').value);
+  const nonneg = sanitize(document.getElementById('nonnegociables').value);
 
   if (!temps || !travail || !nonneg) {
     alert("Remplissez toutes les sections");
+    if (submitBtn) submitBtn.disabled = false;
     return;
   }
 
@@ -73,6 +98,7 @@ document.getElementById('rulesForm').addEventListener('submit', async (e) => {
     const response = await fetch('/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', // 🔐 cookies
       body: JSON.stringify({
         temps,
         travail,
@@ -80,6 +106,8 @@ document.getElementById('rulesForm').addEventListener('submit', async (e) => {
         lang: userLang
       })
     });
+
+    if (!response.ok) throw new Error("Erreur serveur");
 
     const data = await response.json();
 
@@ -94,12 +122,11 @@ document.getElementById('rulesForm').addEventListener('submit', async (e) => {
     const telegramLink = `https://t.me/share/url?url=${encodeURIComponent(pageUrl)}`;
     const shareDiv = document.getElementById('shareLink');
 
-    // Affiche toujours le résultat, même si OpenAI n'a pas généré le profil
     shareDiv.innerHTML = `
-      <p><a href="${downloadUrl}" target="_blank">⬇️ Télécharger RULES.txt</a></p>
-      <p><a href="${pageUrl}" target="_blank">🌐 Voir la page publique</a></p>
-      <p><a href="${whatsappLink}" target="_blank">📲 Partager sur WhatsApp</a></p>
-      <p><a href="${telegramLink}" target="_blank">📨 Partager sur Telegram</a></p>
+      <p><a href="${downloadUrl}" target="_blank" rel="noopener">⬇️ Télécharger RULES.txt</a></p>
+      <p><a href="${pageUrl}" target="_blank" rel="noopener">🌐 Voir la page publique</a></p>
+      <p><a href="${whatsappLink}" target="_blank" rel="noopener">📲 Partager sur WhatsApp</a></p>
+      <p><a href="${telegramLink}" target="_blank" rel="noopener">📨 Partager sur Telegram</a></p>
       <p>
         Lien à copier :
         <input type="text" value="${pageUrl}" readonly onclick="this.select()">
@@ -114,5 +141,7 @@ document.getElementById('rulesForm').addEventListener('submit', async (e) => {
   } catch (err) {
     console.error("Erreur génération RULES :", err);
     alert("Erreur lors de la génération du RULES.txt. Réessayez.");
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 });

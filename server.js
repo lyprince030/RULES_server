@@ -7,17 +7,20 @@ const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const Groq = require('groq-sdk');
 const OpenAI = require('openai');
+const helmet = require('helmet');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
+   Sécurité globale
+========================= */
+app.use(helmet());
+app.disable('x-powered-by');
+
+/* =========================
    GROQ (GRATUIT)
 ========================= */
-if (!process.env.GROQ_API_KEY) {
-  console.warn("⚠️ GROQ_API_KEY manquante, certaines fonctions pourraient ne pas marcher");
-}
-
 const groq = process.env.GROQ_API_KEY
   ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
@@ -32,9 +35,9 @@ const openai = process.env.OPENAI_API_KEY
 /* =========================
    Middlewares
 ========================= */
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '50kb' }));
 app.use(cookieParser());
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.static('public'));
 
 /* =========================
@@ -52,7 +55,8 @@ db.serialize(() => {
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       username TEXT,
-      email TEXT
+      email TEXT,
+      isAdmin INTEGER DEFAULT 0
     )
   `);
 
@@ -76,13 +80,16 @@ app.post('/register', (req, res) => {
     return res.status(400).json({ error: "Champs manquants" });
 
   const id = shortid.generate();
+
   db.run(
-    `INSERT INTO users VALUES (?,?,?)`,
+    `INSERT INTO users (id, username, email) VALUES (?,?,?)`,
     [id, username, email],
     () => {
       res.cookie('userId', id, {
         maxAge: 30 * 24 * 60 * 60 * 1000,
-        httpOnly: true
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax'
       });
       res.json({ success: true });
     }
@@ -97,7 +104,24 @@ app.get('/me', (req, res) => {
 });
 
 /* =========================
-   CREATE RULES (OpenAI optionnel, fallback garanti)
+   Middleware ADMIN
+========================= */
+function requireAdmin(req, res, next) {
+  const userId = req.cookies.userId;
+  if (!userId) return res.sendStatus(401);
+
+  db.get(
+    `SELECT isAdmin FROM users WHERE id=?`,
+    [userId],
+    (err, row) => {
+      if (!row || row.isAdmin !== 1) return res.sendStatus(403);
+      next();
+    }
+  );
+}
+
+/* =========================
+   CREATE RULES (fallback garanti)
 ========================= */
 app.post('/create', async (req, res) => {
   const userId = req.cookies.userId;
@@ -112,7 +136,6 @@ app.post('/create', async (req, res) => {
   const id = shortid.generate();
   const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
 
-  /* ===== Fallback garanti ===== */
   let rulesText = `
 RÈGLES PERSONNELLES
 
@@ -128,7 +151,6 @@ ${nonneg}
 
   let profileText = "Profil IA indisponible.";
 
-  /* ===== OpenAI (optionnel, non bloquant) ===== */
   if (openai) {
     try {
       const completion = await openai.chat.completions.create({
@@ -136,7 +158,7 @@ ${nonneg}
         messages: [
           {
             role: "system",
-            content: `Réponds STRICTEMENT en JSON valide :
+            content: `Réponds STRICTEMENT en JSON :
 { "rules": "texte", "profile": "texte" }`
           },
           {
@@ -154,33 +176,41 @@ NONNEG: ${nonneg}
       });
 
       const raw = completion.choices[0]?.message?.content;
-
       if (raw) {
         try {
           const parsed = JSON.parse(raw);
           rulesText = parsed.rules || rulesText;
           profileText = parsed.profile || profileText;
         } catch {
-          rulesText = raw; // si JSON invalide, fallback texte brut
+          rulesText = raw;
         }
       }
-
     } catch (err) {
       console.warn("⚠️ OpenAI ignoré :", err.message);
     }
   }
 
-  /* ===== Insert en base ===== */
   db.run(
     `INSERT INTO rules VALUES (?,?,?,?,?)`,
     [id, userId, rulesText, profileText, new Date().toISOString()],
     () => {
       res.json({
         success: true,
-        url: `https://${host}/r/${id}`
+        id,
+        pageUrl: `https://${host}/r/${id}`,
+        downloadUrl: `https://${host}/rules/${id}`
       });
     }
   );
+});
+
+/* =========================
+   ADMIN – voir utilisateurs
+========================= */
+app.get('/admin/users', requireAdmin, (req, res) => {
+  db.all(`SELECT id, username, email FROM users`, (err, rows) => {
+    res.json(rows);
+  });
 });
 
 /* =========================

@@ -1,21 +1,22 @@
 /* =========================
    Détection de la langue du navigateur
 ========================= */
-const userLang = navigator.language || navigator.userLanguage; // ex: "fr-FR", "en-US"
+const userLang = navigator.language || navigator.userLanguage; // ex: fr-FR, en-US
 
 /* =========================
-   Vérifier utilisateur déjà connecté
+   Vérifier si utilisateur déjà connecté
 ========================= */
 async function checkUser() {
   try {
     const res = await fetch('/me');
     const data = await res.json();
+
     if (data.logged) {
       document.getElementById('loginSection').style.display = 'none';
       document.getElementById('formSection').style.display = 'block';
     }
   } catch (err) {
-    console.error("Erreur lors de la vérification de l'utilisateur:", err);
+    console.error("Erreur vérification utilisateur :", err);
   }
 }
 checkUser();
@@ -26,7 +27,11 @@ checkUser();
 document.getElementById('registerBtn').addEventListener('click', async () => {
   const username = document.getElementById('username').value.trim();
   const email = document.getElementById('email').value.trim();
-  if (!username || !email) return alert("Remplissez tous les champs");
+
+  if (!username || !email) {
+    alert("Remplissez tous les champs");
+    return;
+  }
 
   try {
     const res = await fetch('/register', {
@@ -34,66 +39,82 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, email })
     });
+
     const data = await res.json();
+
     if (data.userId) {
       document.getElementById('loginSection').style.display = 'none';
       document.getElementById('formSection').style.display = 'block';
+    } else {
+      alert("Erreur lors de l'inscription");
     }
   } catch (err) {
-    console.error("Erreur lors de l'inscription:", err);
+    console.error("Erreur inscription :", err);
     alert("Erreur lors de l'inscription. Réessayez.");
   }
 });
 
 /* =========================
-   Générer RULES.txt + profil IA (multi-langue)
+   Génération RULES.txt + page publique
 ========================= */
-document.getElementById('rulesForm').addEventListener('submit', async function (e) {
+document.getElementById('rulesForm').addEventListener('submit', async (e) => {
   e.preventDefault();
 
   const temps = document.getElementById('temps').value.trim();
   const travail = document.getElementById('travail').value.trim();
   const nonneg = document.getElementById('nonnegociables').value.trim();
 
-  if (!temps || !travail || !nonneg) return alert("Remplissez toutes les sections");
+  if (!temps || !travail || !nonneg) {
+    alert("Remplissez toutes les sections");
+    return;
+  }
 
   try {
-    // On envoie la langue au serveur pour que l'IA adapte le RULES.txt
     const response = await fetch('/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ temps, travail, nonneg, lang: userLang })
+      body: JSON.stringify({
+        temps,
+        travail,
+        nonneg,
+        lang: userLang
+      })
     });
 
     const data = await response.json();
-    if (!data.url) return alert("Erreur lors de la génération du RULES.txt");
 
-    const rulesUrl = data.url;
-
-    // Générer les liens partageables
-    const whatsappLink = `https://api.whatsapp.com/send?text=${encodeURIComponent(rulesUrl)}`;
-    const telegramLink = `https://t.me/share/url?url=${encodeURIComponent(rulesUrl)}`;
-    const copyLink = rulesUrl;
-
-    // Affichage des liens dans la page
-    const shareDiv = document.getElementById('shareLink');
-    if (!shareDiv) {
-      console.error("Erreur : div #shareLink introuvable");
+    if (!data.url) {
+      alert("Erreur lors de la génération du RULES.txt");
       return;
     }
 
+    // URL page publique
+    const pageUrl = data.url;
+
+    // URL téléchargement RULES.txt
+    const downloadUrl = pageUrl.replace('/r/', '/rules/');
+
+    // Liens partage
+    const whatsappLink = `https://api.whatsapp.com/send?text=${encodeURIComponent(pageUrl)}`;
+    const telegramLink = `https://t.me/share/url?url=${encodeURIComponent(pageUrl)}`;
+
+    const shareDiv = document.getElementById('shareLink');
+
     shareDiv.innerHTML = `
-      <p><a href="${rulesUrl}" target="_blank">⬇️ Télécharger RULES.txt</a></p>
+      <p><a href="${downloadUrl}" target="_blank">⬇️ Télécharger RULES.txt</a></p>
+      <p><a href="${pageUrl}" target="_blank">🌐 Voir la page publique</a></p>
       <p><a href="${whatsappLink}" target="_blank">📲 Partager sur WhatsApp</a></p>
       <p><a href="${telegramLink}" target="_blank">📨 Partager sur Telegram</a></p>
-      <p>Lien à copier : <input type="text" value="${copyLink}" readonly></p>
+      <p>
+        Lien à copier :
+        <input type="text" value="${pageUrl}" readonly onclick="this.select()">
+      </p>
     `;
 
-    // Faire défiler vers le résultat
-    shareDiv.scrollIntoView({ behavior: "smooth" });
+    shareDiv.scrollIntoView({ behavior: 'smooth' });
 
   } catch (err) {
-    console.error("Erreur lors de la génération:", err);
+    console.error("Erreur génération RULES :", err);
     alert("Erreur lors de la génération du RULES.txt. Réessayez.");
   }
 });

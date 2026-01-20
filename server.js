@@ -5,21 +5,21 @@ const sqlite3 = require('sqlite3').verbose();
 const shortid = require('shortid');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
-const OpenAI = require('openai');
+const Groq = require('groq-sdk');
 
 const app = express();
-
-/* =========================
-   PORT (Render)
-========================= */
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   OpenAI SAFE
+   GROQ (GRATUIT)
 ========================= */
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
+if (!process.env.GROQ_API_KEY) {
+  console.error("❌ GROQ_API_KEY manquante");
+}
+
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY
+});
 
 /* =========================
    Middlewares
@@ -39,38 +39,44 @@ const db = new sqlite3.Database('./db.sqlite', () => {
 /* =========================
    Tables
 ========================= */
-db.run(`
-CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
-  username TEXT,
-  email TEXT
-)`);
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT,
+      email TEXT
+    )
+  `);
 
-db.run(`
-CREATE TABLE IF NOT EXISTS rules (
-  id TEXT PRIMARY KEY,
-  userId TEXT,
-  rulesText TEXT,
-  profileText TEXT,
-  createdAt TEXT
-)`);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS rules (
+      id TEXT PRIMARY KEY,
+      userId TEXT,
+      rulesText TEXT,
+      profileText TEXT,
+      createdAt TEXT
+    )
+  `);
+});
 
 /* =========================
    Register
 ========================= */
 app.post('/register', (req, res) => {
   const { username, email } = req.body;
-  if (!username || !email) {
+  if (!username || !email)
     return res.status(400).json({ error: "Champs manquants" });
-  }
 
   const id = shortid.generate();
   db.run(
     `INSERT INTO users VALUES (?,?,?)`,
     [id, username, email],
     () => {
-      res.cookie('userId', id, { maxAge: 30 * 24 * 60 * 60 * 1000 });
-      res.json({ userId: id });
+      res.cookie('userId', id, {
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        httpOnly: true
+      });
+      res.json({ success: true });
     }
   );
 });
@@ -79,93 +85,92 @@ app.post('/register', (req, res) => {
    Session
 ========================= */
 app.get('/me', (req, res) => {
-  res.json({ logged: !!req.cookies.userId });
+  res.json({ logged: Boolean(req.cookies.userId) });
 });
 
 /* =========================
-   CREATE RULES (ULTRA SAFE)
+   CREATE RULES (ZERO ERREUR)
 ========================= */
 app.post('/create', async (req, res) => {
   const userId = req.cookies.userId;
-  if (!userId) return res.sendStatus(401);
+  if (!userId)
+    return res.status(401).json({ error: "Non connecté" });
 
   const { temps, travail, nonneg, lang } = req.body;
-  if (!temps || !travail || !nonneg) {
+  if (!temps || !travail || !nonneg)
     return res.status(400).json({ error: "Données incomplètes" });
-  }
 
   const userLang = (lang || 'fr').substring(0, 2);
   const id = shortid.generate();
   const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
 
-  // 🔒 Fallback par défaut (AUCUNE ERREUR POSSIBLE)
+  /* ===== FALLBACK GARANTI ===== */
   let rulesText = `
-RULES PERSONNELLES
+RÈGLES PERSONNELLES
 
-Temps:
+TEMPS
 ${temps}
 
-Travail:
+TRAVAIL / COMMUNICATION
 ${travail}
 
-Non-négociables:
+NON-NÉGOCIABLES
 ${nonneg}
-`;
+`.trim();
 
   let profileText = "Profil IA indisponible.";
 
-  // ⚠️ OpenAI facultatif
+  /* ===== OpenAI (OPTIONNEL, NON BLOQUANT) ===== */
   if (openai) {
     try {
-      const timeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("TIMEOUT")), 12000)
-      );
-
-      const completion = await Promise.race([
-        openai.chat.completions.create({
-          model: "gpt-3.5-turbo",
-          messages: [
-            {
-              role: "system",
-              content: `Réponds UNIQUEMENT en JSON valide :
-{ "rules": "...", "profile": "..." }`
-            },
-            {
-              role: "user",
-              content: `
+      const completion = await openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: `Réponds STRICTEMENT en JSON valide :
+{ "rules": "texte", "profile": "texte" }`
+          },
+          {
+            role: "user",
+            content: `
 LANGUE: ${userLang}
 TEMPS: ${temps}
 TRAVAIL: ${travail}
 NONNEG: ${nonneg}
 `
-            }
-          ],
-          temperature: 0.3
-        }),
-        timeout
-      ]);
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 600
+      });
 
-      const raw = completion.choices[0].message.content;
+      const raw = completion.choices[0]?.message?.content;
 
-      try {
-        const parsed = JSON.parse(raw);
-        rulesText = parsed.rules || rulesText;
-        profileText = parsed.profile || profileText;
-      } catch {
-        rulesText = raw;
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          rulesText = parsed.rules || rulesText;
+          profileText = parsed.profile || profileText;
+        } catch {
+          rulesText = raw;
+        }
       }
 
     } catch (err) {
-      console.error("⚠️ OpenAI ignoré :", err.message);
-      // fallback conservé
+      console.warn("⚠️ OpenAI ignoré :", err.message);
     }
   }
 
+  /* ===== INSERT TOUJOURS ===== */
   db.run(
     `INSERT INTO rules VALUES (?,?,?,?,?)`,
     [id, userId, rulesText, profileText, new Date().toISOString()],
     () => {
-      res.json({ url: `https://${host}/r/${id}` });
+      res.json({
+        success: true,
+        url: `https://${host}/r/${id}`
+      });
     }
   );
 });
@@ -174,64 +179,58 @@ NONNEG: ${nonneg}
    Télécharger RULES.txt
 ========================= */
 app.get('/rules/:id', (req, res) => {
-  db.get(`SELECT rulesText FROM rules WHERE id=?`, [req.params.id], (err, row) => {
-    if (!row) return res.sendStatus(404);
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(row.rulesText);
-  });
+  db.get(
+    `SELECT rulesText FROM rules WHERE id=?`,
+    [req.params.id],
+    (err, row) => {
+      if (!row) return res.sendStatus(404);
+      res.type('text/plain').send(row.rulesText);
+    }
+  );
 });
 
 /* =========================
    Page publique
 ========================= */
 app.get('/r/:id', (req, res) => {
-  db.get(`SELECT * FROM rules WHERE id=?`, [req.params.id], (err, row) => {
-    if (!row) return res.send("RULES introuvable");
+  db.get(
+    `SELECT * FROM rules WHERE id=?`,
+    [req.params.id],
+    (err, row) => {
+      if (!row) return res.send("RULES introuvable");
 
-    const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
-    const pageUrl = `https://${host}/r/${req.params.id}`;
+      const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
+      const pageUrl = `https://${host}/r/${row.id}`;
 
-    res.send(`
+      res.send(`
 <!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <title>RULES</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-body{font-family:Arial;background:#f5f5f5;padding:20px}
-.box{max-width:700px;margin:auto;background:#fff;padding:25px;border-radius:10px}
-pre{white-space:pre-wrap}
-.btn{display:block;margin:10px 0;padding:12px;border-radius:6px;text-decoration:none;color:#fff;text-align:center}
-.dl{background:#0077cc}
-.wa{background:#25D366}
-.copy{background:#444;border:none;width:100%}
-</style>
 </head>
 <body>
-<div class="box">
 <h2>📜 RULES</h2>
 <pre>${row.rulesText}</pre>
 
-<h3>🧠 Profil IA</h3>
+<h3>🧠 Profil</h3>
 <pre>${row.profileText}</pre>
 
-<a class="btn dl" href="/rules/${row.id}">⬇️ Télécharger</a>
-<a class="btn wa" target="_blank"
-href="https://wa.me/?text=${encodeURIComponent("Voici mes règles : " + pageUrl)}">WhatsApp</a>
-
-<button class="btn copy" onclick="navigator.clipboard.writeText('${pageUrl}')">
-Copier le lien
-</button>
-</div>
+<a href="/rules/${row.id}">⬇️ Télécharger RULES.txt</a><br><br>
+<a target="_blank"
+href="https://wa.me/?text=${encodeURIComponent("Voici mes règles : " + pageUrl)}">
+Partager WhatsApp
+</a>
 </body>
 </html>
 `);
-  });
+    }
+  );
 });
 
 /* =========================
-   Start
+   START
 ========================= */
 app.listen(PORT, () => {
   console.log(`🚀 Serveur lancé sur le port ${PORT}`);

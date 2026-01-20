@@ -6,6 +6,7 @@ const shortid = require('shortid');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const Groq = require('groq-sdk');
+const OpenAI = require('openai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,12 +15,19 @@ const PORT = process.env.PORT || 3000;
    GROQ (GRATUIT)
 ========================= */
 if (!process.env.GROQ_API_KEY) {
-  console.error("❌ GROQ_API_KEY manquante");
+  console.warn("⚠️ GROQ_API_KEY manquante, certaines fonctions pourraient ne pas marcher");
 }
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
-});
+const groq = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+  : null;
+
+/* =========================
+   OpenAI optionnel
+========================= */
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 /* =========================
    Middlewares
@@ -89,7 +97,7 @@ app.get('/me', (req, res) => {
 });
 
 /* =========================
-   CREATE RULES (ZERO ERREUR)
+   CREATE RULES (OpenAI optionnel, fallback garanti)
 ========================= */
 app.post('/create', async (req, res) => {
   const userId = req.cookies.userId;
@@ -104,7 +112,7 @@ app.post('/create', async (req, res) => {
   const id = shortid.generate();
   const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
 
-  /* ===== FALLBACK GARANTI ===== */
+  /* ===== Fallback garanti ===== */
   let rulesText = `
 RÈGLES PERSONNELLES
 
@@ -120,7 +128,7 @@ ${nonneg}
 
   let profileText = "Profil IA indisponible.";
 
-  /* ===== OpenAI (OPTIONNEL, NON BLOQUANT) ===== */
+  /* ===== OpenAI (optionnel, non bloquant) ===== */
   if (openai) {
     try {
       const completion = await openai.chat.completions.create({
@@ -153,7 +161,7 @@ NONNEG: ${nonneg}
           rulesText = parsed.rules || rulesText;
           profileText = parsed.profile || profileText;
         } catch {
-          rulesText = raw;
+          rulesText = raw; // si JSON invalide, fallback texte brut
         }
       }
 
@@ -162,7 +170,7 @@ NONNEG: ${nonneg}
     }
   }
 
-  /* ===== INSERT TOUJOURS ===== */
+  /* ===== Insert en base ===== */
   db.run(
     `INSERT INTO rules VALUES (?,?,?,?,?)`,
     [id, userId, rulesText, profileText, new Date().toISOString()],

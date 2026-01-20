@@ -42,7 +42,7 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
 
     const data = await res.json();
 
-    if (data.userId) {
+    if (data.success) {
       document.getElementById('loginSection').style.display = 'none';
       document.getElementById('formSection').style.display = 'block';
     } else {
@@ -88,18 +88,13 @@ document.getElementById('rulesForm').addEventListener('submit', async (e) => {
       return;
     }
 
-    // URL page publique
     const pageUrl = data.url;
-
-    // URL téléchargement RULES.txt
     const downloadUrl = pageUrl.replace('/r/', '/rules/');
-
-    // Liens partage
     const whatsappLink = `https://api.whatsapp.com/send?text=${encodeURIComponent(pageUrl)}`;
     const telegramLink = `https://t.me/share/url?url=${encodeURIComponent(pageUrl)}`;
-
     const shareDiv = document.getElementById('shareLink');
 
+    // Affiche toujours le résultat, même si OpenAI n'a pas généré le profil
     shareDiv.innerHTML = `
       <p><a href="${downloadUrl}" target="_blank">⬇️ Télécharger RULES.txt</a></p>
       <p><a href="${pageUrl}" target="_blank">🌐 Voir la page publique</a></p>
@@ -108,6 +103,9 @@ document.getElementById('rulesForm').addEventListener('submit', async (e) => {
       <p>
         Lien à copier :
         <input type="text" value="${pageUrl}" readonly onclick="this.select()">
+      </p>
+      <p style="color:gray;font-size:0.9em;">
+        ⚠️ Si le profil IA n'est pas généré, seules les règles sont disponibles (fallback garanti)
       </p>
     `;
 

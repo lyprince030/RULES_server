@@ -10,12 +10,19 @@ const OpenAI = require('openai');
 const app = express();
 
 /* =========================
-   PORT dynamique pour Render
+   PORT (Render)
 ========================= */
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   OpenAI
+   Sécurité OpenAI
+========================= */
+if (!process.env.OPENAI_API_KEY) {
+  console.error("❌ OPENAI_API_KEY manquante");
+}
+
+/* =========================
+   OpenAI (stable)
 ========================= */
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -30,22 +37,24 @@ app.use(cors());
 app.use(express.static('public'));
 
 /* =========================
-   Base SQLite
+   SQLite
 ========================= */
 const db = new sqlite3.Database('./db.sqlite', () => {
-  console.log('✅ Connecté à SQLite.');
+  console.log('✅ SQLite connecté');
 });
 
 /* =========================
    Tables
 ========================= */
-db.run(`CREATE TABLE IF NOT EXISTS users (
+db.run(`
+CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   username TEXT,
   email TEXT
 )`);
 
-db.run(`CREATE TABLE IF NOT EXISTS rules (
+db.run(`
+CREATE TABLE IF NOT EXISTS rules (
   id TEXT PRIMARY KEY,
   userId TEXT,
   rulesText TEXT,
@@ -54,100 +63,105 @@ db.run(`CREATE TABLE IF NOT EXISTS rules (
 )`);
 
 /* =========================
-   Register / Connexion
+   Register
 ========================= */
 app.post('/register', (req, res) => {
   const { username, email } = req.body;
-  if (!username || !email) return res.status(400).json({ error: "Champs manquants" });
+  if (!username || !email) {
+    return res.status(400).json({ error: "Champs manquants" });
+  }
 
   const id = shortid.generate();
-
-  db.run(`INSERT INTO users VALUES(?,?,?)`, [id, username, email], () => {
-    res.cookie('userId', id, { maxAge: 30 * 24 * 60 * 60 * 1000 });
-    res.json({ userId: id });
-  });
+  db.run(
+    `INSERT INTO users VALUES (?,?,?)`,
+    [id, username, email],
+    () => {
+      res.cookie('userId', id, { maxAge: 30 * 24 * 60 * 60 * 1000 });
+      res.json({ userId: id });
+    }
+  );
 });
 
 /* =========================
    Session
 ========================= */
 app.get('/me', (req, res) => {
-  if (!req.cookies.userId) return res.json({ logged: false });
-  res.json({ logged: true });
+  res.json({ logged: !!req.cookies.userId });
 });
 
 /* =========================
-   Create RULES + Profil IA (multi-langue)
+   CREATE RULES (ANTI-ERREUR)
 ========================= */
 app.post('/create', async (req, res) => {
   const userId = req.cookies.userId;
   if (!userId) return res.sendStatus(401);
 
   const { temps, travail, nonneg, lang } = req.body;
-  if (!temps || !travail || !nonneg)
+  if (!temps || !travail || !nonneg) {
     return res.status(400).json({ error: "Données incomplètes" });
+  }
 
-  const userLang = (lang || 'fr').substring(0, 2); // ex: "fr-FR" → "fr"
+  const userLang = (lang || 'fr').substring(0, 2);
 
   const prompt = `
-LANG: ${userLang}
+LANGUE: ${userLang}
 
 TEMPS:
 ${temps}
 
-TRAVAIL / COMMUNICATION:
+TRAVAIL:
 ${travail}
 
 NON-NÉGOCIABLES:
 ${nonneg}
 `;
 
+  let rulesText = "RULES indisponibles.";
+  let profileText = "Profil indisponible.";
+
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-3.5-turbo", // 🔥 STABLE
       messages: [
         {
           role: "system",
-          content: `
-Répond STRICTEMENT en JSON :
+          content:
+`Tu DOIS répondre UNIQUEMENT en JSON valide :
 {
-  "rules": "RULES.txt clair, structuré, ferme, dans la langue spécifiée",
-  "profile": "Profil psychologique court de la personne, dans la langue spécifiée"
-}
-`
+  "rules": "texte",
+  "profile": "texte"
+}`
         },
         { role: "user", content: prompt }
       ],
       temperature: 0.3
     });
 
-    let aiData;
+    const raw = completion.choices[0].message.content;
+
     try {
-      aiData = JSON.parse(completion.choices[0].message.content);
-    } catch (jsonErr) {
-      console.error("❌ JSON IA invalide :", completion.choices[0].message.content);
-      return res.status(500).json({ error: "Erreur IA : JSON invalide" });
+      const parsed = JSON.parse(raw);
+      rulesText = parsed.rules || rulesText;
+      profileText = parsed.profile || profileText;
+    } catch {
+      console.error("❌ JSON invalide IA, fallback activé");
+      rulesText = raw; // au pire on affiche le texte brut
     }
 
-    const rulesText = aiData.rules;
-    const profileText = aiData.profile;
-
-    const id = shortid.generate();
-
-    // URL publique dynamique (Render)
-    const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
-
-    db.run(
-      `INSERT INTO rules(id, userId, rulesText, profileText, createdAt)
-       VALUES(?,?,?,?,?)`,
-      [id, userId, rulesText, profileText, new Date().toISOString()],
-      () => res.json({ url: `https://${host}/r/${id}` })
-    );
-
-  } catch (e) {
-    console.error("❌ Erreur IA :", e);
-    res.status(500).json({ error: "Erreur lors de la génération IA : " + e.message });
+  } catch (err) {
+    console.error("❌ OpenAI DOWN / BLOQUÉ :", err.message);
   }
+
+  const id = shortid.generate();
+  const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
+
+  db.run(
+    `INSERT INTO rules VALUES (?,?,?,?,?)`,
+    [id, userId, rulesText, profileText, new Date().toISOString()],
+    () => {
+      res.json({ url: `https://${host}/r/${id}` });
+    }
+  );
 });
 
 /* =========================
@@ -162,10 +176,10 @@ app.get('/rules/:id', (req, res) => {
 });
 
 /* =========================
-   Page Publique / Partage
+   Page publique
 ========================= */
 app.get('/r/:id', (req, res) => {
-  db.get(`SELECT rulesText, profileText FROM rules WHERE id=?`, [req.params.id], (err, row) => {
+  db.get(`SELECT * FROM rules WHERE id=?`, [req.params.id], (err, row) => {
     if (!row) return res.send("RULES introuvable");
 
     const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
@@ -181,7 +195,7 @@ app.get('/r/:id', (req, res) => {
 <style>
 body{font-family:Arial;background:#f5f5f5;padding:20px}
 .box{max-width:700px;margin:auto;background:#fff;padding:25px;border-radius:10px}
-pre{white-space:pre-wrap;font-size:14px}
+pre{white-space:pre-wrap}
 .btn{display:block;margin:10px 0;padding:12px;border-radius:6px;text-decoration:none;color:#fff;text-align:center}
 .dl{background:#0077cc}
 .wa{background:#25D366}
@@ -194,17 +208,14 @@ pre{white-space:pre-wrap;font-size:14px}
 <pre>${row.rulesText}</pre>
 
 <h3>🧠 Profil IA</h3>
-<pre>${row.profileText || "Profil indisponible"}</pre>
+<pre>${row.profileText}</pre>
 
-<a class="btn dl" href="/rules/${req.params.id}">⬇️ Télécharger RULES.txt</a>
-
+<a class="btn dl" href="/rules/${row.id}">⬇️ Télécharger</a>
 <a class="btn wa" target="_blank"
-href="https://wa.me/?text=${encodeURIComponent("Voici mes règles personnelles : " + pageUrl)}">
-📲 Partager WhatsApp
-</a>
+href="https://wa.me/?text=${encodeURIComponent("Voici mes règles : " + pageUrl)}">WhatsApp</a>
 
 <button class="btn copy" onclick="navigator.clipboard.writeText('${pageUrl}')">
-📋 Copier le lien
+Copier le lien
 </button>
 </div>
 </body>
@@ -214,8 +225,8 @@ href="https://wa.me/?text=${encodeURIComponent("Voici mes règles personnelles :
 });
 
 /* =========================
-   Démarrage serveur
+   Start
 ========================= */
 app.listen(PORT, () => {
-  console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
+  console.log(`🚀 Serveur lancé sur ${PORT}`);
 });

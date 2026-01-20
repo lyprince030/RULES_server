@@ -15,18 +15,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 /* =========================
-   Sécurité OpenAI
+   OpenAI SAFE
 ========================= */
-if (!process.env.OPENAI_API_KEY) {
-  console.error("❌ OPENAI_API_KEY manquante");
-}
-
-/* =========================
-   OpenAI (stable)
-========================= */
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 /* =========================
    Middlewares
@@ -90,7 +83,7 @@ app.get('/me', (req, res) => {
 });
 
 /* =========================
-   CREATE RULES (ANTI-ERREUR)
+   CREATE RULES (ULTRA SAFE)
 ========================= */
 app.post('/create', async (req, res) => {
   const userId = req.cookies.userId;
@@ -102,58 +95,71 @@ app.post('/create', async (req, res) => {
   }
 
   const userLang = (lang || 'fr').substring(0, 2);
+  const id = shortid.generate();
+  const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
 
-  const prompt = `
-LANGUE: ${userLang}
+  // 🔒 Fallback par défaut (AUCUNE ERREUR POSSIBLE)
+  let rulesText = `
+RULES PERSONNELLES
 
-TEMPS:
+Temps:
 ${temps}
 
-TRAVAIL:
+Travail:
 ${travail}
 
-NON-NÉGOCIABLES:
+Non-négociables:
 ${nonneg}
 `;
 
-  let rulesText = "RULES indisponibles.";
-  let profileText = "Profil indisponible.";
+  let profileText = "Profil IA indisponible.";
 
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo", // 🔥 STABLE
-      messages: [
-        {
-          role: "system",
-          content:
-`Tu DOIS répondre UNIQUEMENT en JSON valide :
-{
-  "rules": "texte",
-  "profile": "texte"
-}`
-        },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.3
-    });
-
-    const raw = completion.choices[0].message.content;
-
+  // ⚠️ OpenAI facultatif
+  if (openai) {
     try {
-      const parsed = JSON.parse(raw);
-      rulesText = parsed.rules || rulesText;
-      profileText = parsed.profile || profileText;
-    } catch {
-      console.error("❌ JSON invalide IA, fallback activé");
-      rulesText = raw; // au pire on affiche le texte brut
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("TIMEOUT")), 12000)
+      );
+
+      const completion = await Promise.race([
+        openai.chat.completions.create({
+          model: "gpt-3.5-turbo",
+          messages: [
+            {
+              role: "system",
+              content: `Réponds UNIQUEMENT en JSON valide :
+{ "rules": "...", "profile": "..." }`
+            },
+            {
+              role: "user",
+              content: `
+LANGUE: ${userLang}
+TEMPS: ${temps}
+TRAVAIL: ${travail}
+NONNEG: ${nonneg}
+`
+            }
+          ],
+          temperature: 0.3
+        }),
+        timeout
+      ]);
+
+      const raw = completion.choices[0].message.content;
+
+      try {
+        const parsed = JSON.parse(raw);
+        rulesText = parsed.rules || rulesText;
+        profileText = parsed.profile || profileText;
+      } catch {
+        rulesText = raw;
+      }
+
+    } catch (err) {
+      console.error("⚠️ OpenAI ignoré :", err.message);
+      // fallback conservé
     }
-
-  } catch (err) {
-    console.error("❌ OpenAI DOWN / BLOQUÉ :", err.message);
   }
-
-  const id = shortid.generate();
-  const host = process.env.RENDER_EXTERNAL_HOSTNAME || req.get('host');
 
   db.run(
     `INSERT INTO rules VALUES (?,?,?,?,?)`,
@@ -228,5 +234,5 @@ Copier le lien
    Start
 ========================= */
 app.listen(PORT, () => {
-  console.log(`🚀 Serveur lancé sur ${PORT}`);
+  console.log(`🚀 Serveur lancé sur le port ${PORT}`);
 });
